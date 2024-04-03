@@ -5,6 +5,7 @@ const User = require('./models/user')
 const path = require('path')
 const bcrypt = require('bcrypt')
 const ejs = require('ejs')
+const session = require('express-session')
 const mongoose = require('mongoose')
 mongoose.connect('mongodb://127.0.0.1:27017/users', {})
 .then(() => { console.log('Mongoose Connected!')})
@@ -13,6 +14,15 @@ mongoose.connect('mongodb://127.0.0.1:27017/users', {})
 app.set('view engine', 'ejs')
 app.set('views', path.join(__dirname, 'views'))
 app.use(express.urlencoded({ extended: true }))
+app.use(session({secret: 'notagoodsecret', resave: false, saveUninitialized: true}))
+
+const requireLogin = (req,res,next) => {
+    if(!req.session.user_id){
+        return res.redirect('/login')
+    } else {
+        next()
+    }
+}
 
 app.get('/', (req, res) => {
     res.send('HOMEPAGE')
@@ -27,21 +37,30 @@ app.get('/login', (req, res) => {
 })
 
 app.get('/admin', (req, res) => {
-    res.send('Admin authorized!')
+    if(!req.session.user_id){
+        res.redirect('/login')
+    } else{
+        res.render('secret')
+    }
+})
+
+app.get('/topsecret', requireLogin, (req,res) => {
+    res.send('Top Secret')
+})
+
+app.get('/secret', requireLogin, (req,res) => {
+        res.render('secret')
 })
 
 app.post('/login', async (req, res) => {
     const {username, password} = req.body
-    const user = await User.findOne({username: username})
-    if(!user){
-        res.send('Username or Password incorrect')
-    }
-    const hash = user.password
-    const isCorrect = await bcrypt.compare(password, hash)
-    if(isCorrect){
-        res.send('Logged In')
+    const user = await User.findAndValidate(username, password)
+
+    if(user){
+        req.session.user_id = user._id;
+        res.redirect('/admin')
     } else {
-        res.send('Username or Password incorrect')
+        res.redirect('/login')
     }
 })
 
@@ -52,7 +71,13 @@ app.post('/register', async (req, res) => {
     const user = await new User({username, password: hash})
     console.log(user)
     await user.save()
-    res.redirect('/')
+    req.session.user_id = user._id;
+    res.redirect('/login')
+})
+
+app.post('/logout', (req,res) => {
+    req.session.user_id = null
+    res.redirect('/login')
 })
 
 app.listen(port, () => { console.log(`listening on port ${port}`)})
